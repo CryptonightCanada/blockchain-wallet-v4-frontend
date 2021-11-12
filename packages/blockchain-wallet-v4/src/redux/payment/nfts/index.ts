@@ -24,11 +24,46 @@ export const cancelNftListing = async (sellOrder: SellOrder, signer: Signer) => 
 export const fulfillNftSellOrder = async (
   asset: NftAsset,
   signer: Signer,
+  provider: ethers.providers.Provider,
   startPrice = 0.011, // The starting price for auctions / sale price for fixed price sale orders (TODO: Remove default 0.1 value)
   endPrice: number | null = null, // Implement later for to enable dutch auction sales.
   waitForHighestBid = false // True = English auction
 ) => {
   const signedOrder = await createSellOrder(asset, signer, startPrice, endPrice, waitForHighestBid)
+  // 1. use the _makeSellOrder to create the object & initialize the proxy contract for this sale.
+  const accountAddress = await signer.getAddress()
+  const order = await _makeSellOrder({
+    accountAddress,
+    asset,
+    buyerAddress: '0x0000000000000000000000000000000000000000',
+    expirationTime: 0,
+    extraBountyBasisPoints: 0,
+    paymentTokenAddress: '0x0000000000000000000000000000000000000000',
+    quantity: 1,
+    startAmount: 0.1,
+    waitForHighestBid: false
+  })
+  // 2. Validation of sell order fields & Transaction Approvals (Proxy initialized here if needed also)
+  const validatedAndApproved = await _sellOrderValidationAndApprovals({ order, signer })
+  console.log(`Successful approvals and validations?: ${validatedAndApproved}`)
+  // 3. Compute hash of the order and output {...order, hash:hash(order)}
+  const hashedOrder = {
+    ...order,
+    hash: getOrderHash(order)
+  }
+  // 4. Obtain a signature from the signer (using the mnemonic & Ethers JS) over the hash and message.
+  let signature
+  try {
+    signature = await _authorizeOrder(hashedOrder, signer, provider)
+  } catch (error) {
+    console.error(error)
+    throw new Error('You declined to authorize your auction')
+  }
+
+  const orderWithSignature = {
+    ...hashedOrder,
+    ...signature
+  }
   console.log('next up, try to post this to the OpenSea API:')
   console.log(signedOrder)
   return signedOrder

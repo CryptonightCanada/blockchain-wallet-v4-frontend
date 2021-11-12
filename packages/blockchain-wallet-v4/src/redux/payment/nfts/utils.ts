@@ -187,11 +187,11 @@ async function safeGasEstimation(estimationFunction, args, txData, retries = 2) 
     if (errorCode === 'UNPREDICTABLE_GAS_LIMIT') {
       throw new Error('Transaction will fail, check Ether balance and gas limit.')
     } else if (errorCode === 'SERVER_ERROR') {
-      console.log('Server error whilst estimating gas')
+      console.error('Server error whilst estimating gas')
       if (retries > 0) {
         safeGasEstimation(estimationFunction, args, txData, retries - 1)
       } else {
-        throw new Error('Gas estimation failing consistently.')
+        console.error('Gas estimation failing consistently.')
       }
     } else {
       console.log(JSON.stringify(e, null, 4))
@@ -834,8 +834,10 @@ async function _getPriceParameters(
  * @param web3 Web3 instance
  * @param address input address
  */
-export async function isContractAddress(address: string): Promise<boolean> {
-  const provider = ethers.getDefaultProvider()
+export async function isContractAddress(
+  address: string,
+  provider: ethers.providers.Provider
+): Promise<boolean> {
   const code = await provider.getCode(address)
   return code !== '0x'
 }
@@ -905,11 +907,12 @@ export async function _signMessage({
 
 export async function _authorizeOrder(
   order: UnsignedOrder,
-  signer: Signer
+  signer: Signer,
+  provider: ethers.providers.Provider
 ): Promise<ECSignature | null> {
   const message = order.hash
   const signerAddress = order.maker
-  const makerIsSmartContract = await isContractAddress(signerAddress)
+  const makerIsSmartContract = await isContractAddress(signerAddress, provider)
 
   try {
     if (makerIsSmartContract) {
@@ -1759,8 +1762,7 @@ export async function _cancelOrder({
     order.staticExtradata,
     order.v || 0,
     order.r || NULL_BLOCK_HASH,
-    order.s || NULL_BLOCK_HASH,
-    txnData
+    order.s || NULL_BLOCK_HASH
   ]
 
   txnData.gasLimit = await safeGasEstimation(
@@ -1768,7 +1770,6 @@ export async function _cancelOrder({
     args,
     txnData
   )
-
   const transactionHash = await wyvernExchangeContract.cancelOrder_(...args, txnData)
 
   const receipt = await transactionHash.wait()
